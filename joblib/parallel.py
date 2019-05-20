@@ -12,6 +12,7 @@ import sys
 from math import sqrt
 import functools
 import time
+import logging
 import inspect
 import threading
 import itertools
@@ -55,6 +56,9 @@ _backend = threading.local()
 
 VALID_BACKEND_HINTS = ('processes', 'threads', None)
 VALID_BACKEND_CONSTRAINTS = ('sharedmem', None)
+
+logger = logging.getLogger('joblib/parallel.py')
+logging.basicConfig(level=logging.DEBUG, format='[%(asctime)s] [%(process)s/%(threadName)s] [%(levelname)s] [%(name)s] %(message)s')
 
 
 def _register_dask():
@@ -165,6 +169,7 @@ class parallel_backend(object):
 
     """
     def __init__(self, backend, n_jobs=-1, **backend_params):
+        logging.info("parallel_backend.__init__ called")
         if isinstance(backend, _basestring):
             if backend not in BACKENDS and backend in EXTERNAL_BACKENDS:
                 register = EXTERNAL_BACKENDS[backend]
@@ -207,8 +212,10 @@ class BatchedCalls(object):
     """Wrap a sequence of (func, args, kwargs) tuples as a single callable"""
 
     def __init__(self, iterator_slice, backend_and_jobs, pickle_cache=None):
+        logging.info("BatchedCalls.__init__ called")
         self.items = list(iterator_slice)
         self._size = len(self.items)
+        logging.info("BatchedCalls.__init__ : wraps %s objects" % self._size)
         if isinstance(backend_and_jobs, tuple):
             self._backend, self._n_jobs = backend_and_jobs
         else:
@@ -263,6 +270,7 @@ def _verbosity_filter(index, verbose):
 ###############################################################################
 def delayed(function, check_pickle=None):
     """Decorator used to capture the arguments of a function."""
+    logging.info("delayed called")
     if check_pickle is not None:
         warnings.warn('check_pickle is deprecated in joblib 0.12 and will be'
                       ' removed in 0.13', DeprecationWarning)
@@ -293,20 +301,29 @@ class BatchCompletionCallBack(object):
 
     """
     def __init__(self, dispatch_timestamp, batch_size, parallel):
+        logging.info("BatchCompletionCallBack.__init__ called")
         self.dispatch_timestamp = dispatch_timestamp
         self.batch_size = batch_size
         self.parallel = parallel
 
     def __call__(self, out):
+        logging.info("BatchCompletionCallBack.__call__ called")
         self.parallel.n_completed_tasks += self.batch_size
         this_batch_duration = time.time() - self.dispatch_timestamp
 
         self.parallel._backend.batch_completed(self.batch_size,
                                                this_batch_duration)
         self.parallel.print_progress()
+        logging.info("BatchCompletionCallBack.__call__: taking the lock")
         with self.parallel._lock:
+            logging.info("BatchCompletionCallBack.__call__: lock taken")
             if self.parallel._original_iterator is not None:
+                logging.info("BatchCompletionCallBack.__call__: calling Parallel.dispatch_next")
                 self.parallel.dispatch_next()
+            else:
+                logging.info("BatchCompletionCallBack.__call__: not calling Parallel.dispatch_next")
+            logging.info("BatchCompletionCallBack.__call__: leaving the lock")
+        logging.info("BatchCompletionCallBack.__call__: left the lock")
 
 
 ###############################################################################
@@ -326,6 +343,7 @@ def register_parallel_backend(name, factory, make_default=False):
     .. versionadded:: 0.10
 
     """
+    logging.info("register_parallel_backend called")
     BACKENDS[name] = factory
     if make_default:
         global DEFAULT_BACKEND
@@ -585,6 +603,7 @@ class Parallel(Logger):
                  pre_dispatch='2 * n_jobs', batch_size='auto',
                  temp_folder=None, max_nbytes='1M', mmap_mode='r',
                  prefer=None, require=None):
+        logging.info("Parallel.__init__ called")
         active_backend, context_n_jobs = get_active_backend(
             prefer=prefer, require=require, verbose=verbose)
         if backend is None and n_jobs is None:
@@ -658,6 +677,7 @@ class Parallel(Logger):
         self._lock = threading.RLock()
 
     def __enter__(self):
+        logging.info("Parallel.__enter__ called")
         self._managed_backend = True
         self._initialize_backend()
         return self
@@ -668,6 +688,7 @@ class Parallel(Logger):
 
     def _initialize_backend(self):
         """Build a process or thread pool and return the number of workers"""
+        logging.info("Parallel._initialize_backend called")
         try:
             n_jobs = self._backend.configure(n_jobs=self.n_jobs, parallel=self,
                                              **self._backend_args)
@@ -702,6 +723,7 @@ class Parallel(Logger):
         indirectly via dispatch_one_batch.
 
         """
+        logging.info("Parallel._dispatch called")
         # If job.get() catches an exception, it closes the queue:
         if self._aborting:
             return
@@ -711,14 +733,20 @@ class Parallel(Logger):
 
         dispatch_timestamp = time.time()
         cb = BatchCompletionCallBack(dispatch_timestamp, len(batch), self)
+        logging.info("Parallel._dispatch: taking the lock")
         with self._lock:
+            logging.info("Parallel._dispatch: took the lock")
             job_idx = len(self._jobs)
+            logging.info("Parallel._dispatch: submitting job of id %s to back-end of size %s" % (job_idx, len(batch)))
             job = self._backend.apply_async(batch, callback=cb)
             # A job can complete so quickly than its callback is
             # called before we get here, causing self._jobs to
             # grow. To ensure correct results ordering, .insert is
             # used (rather than .append) in the following line
+            logging.info("Parallel._dispatch: job of id %s inserted to back-end" % job_idx)
             self._jobs.insert(job_idx, job)
+            logging.info("Parallel._dispatch: leaving the lock")
+        logging.info("Parallel._dispatch: left the lock")
 
     def dispatch_next(self):
         """Dispatch more data for parallel processing
@@ -728,6 +756,7 @@ class Parallel(Logger):
         against concurrent consumption of the unprotected iterator.
 
         """
+        logging.info("Parallel.dispatch_one_batch called")
         if not self.dispatch_one_batch(self._original_iterator):
             self._iterating = False
             self._original_iterator = None
@@ -749,33 +778,37 @@ class Parallel(Logger):
             batch_size = self.batch_size
 
         with self._lock:
+            logging.info("Parallel.dispatch_one_batch: took the lock")
             tasks = BatchedCalls(itertools.islice(iterator, batch_size),
                                  self._backend.get_nested_backend(),
                                  self._pickle_cache)
             if len(tasks) == 0:
                 # No more tasks available in the iterator: tell caller to stop.
-                return False
+                logging.info("Parallel.dispatch_one_batch: No more tasks available in the iterator; leaving lock")
+                jobs_left_to_dispatch = False
             else:
+                logging.info("Parallel.dispatch: calling self._dispatch")
                 self._dispatch(tasks)
-                return True
+                logging.info("Parallel.dispatch_one_batch: leaving the lock after self._dispatch")
+                jobs_left_to_dispatch = True
+
+        logging.info("Parallel.dispatch_one_batch: left the lock")
+        return jobs_left_to_dispatch
 
     def _print(self, msg, msg_args):
         """Display the message on stout or stderr depending on verbosity"""
+        logging.info("Parallel._print called")
         # XXX: Not using the logger framework: need to
         # learn to use logger better.
-        if not self.verbose:
-            return
-        if self.verbose < 50:
-            writer = sys.stderr.write
-        else:
-            writer = sys.stdout.write
         msg = msg % msg_args
-        writer('[%s]: %s\n' % (self, msg))
+        log = '[%s]: %s\n' % (self, msg)
+        logging.info(log)
 
     def print_progress(self):
         """Display the process of the parallel execution only a fraction
            of time, controlled by self.verbose.
         """
+        logging.info("Parallel.print_progress called")
         if not self.verbose:
             return
         elapsed_time = time.time() - self._start_time
@@ -816,6 +849,7 @@ class Parallel(Logger):
                          ))
 
     def retrieve(self):
+        logging.info("Parallel.retrieve called")
         self._output = list()
         while self._iterating or len(self._jobs) > 0:
             if len(self._jobs) == 0:
@@ -826,13 +860,17 @@ class Parallel(Logger):
             # we empty it and Python list are not thread-safe by default hence
             # the use of the lock
             with self._lock:
+                logging.info("Parallel.retrieve: pop one job from queue")
                 job = self._jobs.pop(0)
 
             try:
                 if getattr(self._backend, 'supports_timeout', False):
-                    self._output.extend(job.get(timeout=self.timeout))
+                    res = job.get(timeout=self.timeout)
                 else:
-                    self._output.extend(job.get())
+                    res = job.get()
+                logging.info("Parallel.retrieve: adding result of job to output")
+                logging.info(res)
+                self._output.extend(res)
 
             except BaseException as exception:
                 # Note: we catch any BaseException instead of just Exception
@@ -864,6 +902,7 @@ class Parallel(Logger):
                     raise
 
     def __call__(self, iterable):
+        logging.info("Parallel.__call__ called")
         if self._jobs:
             raise ValueError('This Parallel instance is already running')
         # A flag used to abort the dispatching of jobs in case an
@@ -883,6 +922,8 @@ class Parallel(Logger):
         if hasattr(self._backend, 'start_call'):
             self._backend.start_call()
         iterator = iter(iterable)
+        logging.info("Parallel.__call__: iterator created")
+        logging.info(iterator)
         pre_dispatch = self.pre_dispatch
 
         if pre_dispatch == 'all' or n_jobs == 1:
@@ -919,10 +960,14 @@ class Parallel(Logger):
             # remaining jobs.
             self._iterating = False
             if self.dispatch_one_batch(iterator):
+                logging.info("Parallel.__call__ dispatched initial batch")
                 self._iterating = self._original_iterator is not None
 
             while self.dispatch_one_batch(iterator):
+                logging.info("Parallel.__call__ dispatched one batch")
                 pass
+
+            logging.info("Parallel.__call__ done dispatching batches")
 
             if pre_dispatch == "all" or n_jobs == 1:
                 # The iterable was consumed all at once by the above for loop.
@@ -931,6 +976,7 @@ class Parallel(Logger):
                 self._iterating = False
 
             with self._backend.retrieval_context():
+                logging.info("Parallel.__call__ retrieving context")
                 self.retrieve()
             # Make sure that we get a last message telling us we are done
             elapsed_time = time.time() - self._start_time
@@ -938,6 +984,7 @@ class Parallel(Logger):
                         (len(self._output), len(self._output),
                          short_format_time(elapsed_time)))
         finally:
+            logging.info("Parallel.__call__ back-end teardown")
             if hasattr(self._backend, 'stop_call'):
                 self._backend.stop_call()
             if not self._managed_backend:
@@ -946,6 +993,7 @@ class Parallel(Logger):
             self._pickle_cache = None
         output = self._output
         self._output = None
+        logging.info("Parallel.__call__ returning")
         return output
 
     def __repr__(self):
