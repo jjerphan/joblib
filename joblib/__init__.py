@@ -125,6 +125,10 @@ from .parallel import effective_n_jobs
 
 from .externals.loky import wrap_non_picklable_objects
 
+import logging
+
+logging.info("Joblib %s imported" % __version__)
+
 
 __all__ = ['Memory', 'MemorizedResult', 'PrintTime', 'Logger', 'hash', 'dump',
            'load', 'Parallel', 'delayed', 'cpu_count', 'effective_n_jobs',
