@@ -6,6 +6,7 @@ import gc
 import os
 import sys
 import warnings
+import logging
 import threading
 import functools
 import contextlib
@@ -25,6 +26,9 @@ if mp is not None:
     from multiprocessing import TimeoutError
     from .externals.loky._base import TimeoutError as LokyTimeoutError
     from .externals.loky import process_executor, cpu_count
+
+logger = logging.getLogger('joblib/_parallel_backends.py')
+logging.basicConfig(level=logging.DEBUG, format='[%(asctime)s] [%(process)s/%(threadName)s] [%(levelname)s] [%(name)s] %(message)s')
 
 
 class ParallelBackendBase(with_metaclass(ABCMeta)):
@@ -178,6 +182,7 @@ class SequentialBackend(ParallelBackendBase):
         return 1
 
     def apply_async(self, func, callback=None):
+        logging.info("PoolManagerMixin.apply_async called")
         """Schedule a func to be run"""
         result = ImmediateResult(func)
         if callback:
@@ -228,6 +233,7 @@ class PoolManagerMixin(object):
 
     def abort_everything(self, ensure_ready=True):
         """Shutdown the pool and restart a new one with the same parameters"""
+        logging.info("PoolManagerMixin.abort_everything called")
         self.terminate()
         if ensure_ready:
             self.configure(n_jobs=self.parallel.n_jobs, parallel=self.parallel,
