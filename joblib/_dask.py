@@ -30,16 +30,15 @@ def is_weakrefable(obj):
         return False
 
 
-logger = logging.getLogger('joblib._dask')
-logging.basicConfig(level=logging.DEBUG, format='[%(asctime)s] [%(process)s/%(threadName)s] [%(levelname)s] [%(name)s] %(message)s')
-
-
 try:
     TimeoutError = TimeoutError
 except NameError:
     # Python 2 backward compat
     class TimeoutError(OSError):
         pass
+
+logger = logging.getLogger('joblib.dask')
+logging.basicConfig(level=logging.DEBUG, format='[%(asctime)s] [%(process)s/%(threadName)s] [%(levelname)s] [%(name)s] %(message)s')
 
 
 class _WeakKeyDictionary:
