@@ -64,6 +64,7 @@ logging.basicConfig(level=logging.DEBUG, format='[%(asctime)s] [%(process)s/%(th
 def _register_dask():
     """ Register Dask Backend if called with parallel_backend("dask") """
     try:
+        logging.info("_register_dask called")
         from ._dask import DaskDistributedBackend
         register_parallel_backend('dask', DaskDistributedBackend)
     except ImportError:
@@ -343,7 +344,7 @@ def register_parallel_backend(name, factory, make_default=False):
     .. versionadded:: 0.10
 
     """
-    logger.info("register_parallel_backend called")
+    logger.info("register_parallel_backend called on ; name: %s ; factory: %s" % (name, factory.__class__.__name__))
     BACKENDS[name] = factory
     if make_default:
         global DEFAULT_BACKEND
@@ -648,11 +649,13 @@ class Parallel(Logger):
             backend = MultiprocessingBackend()
         else:
             try:
+                logger.info("Parallel.__init__: getting back_end from given string:'%s' " % backend)
                 backend_factory = BACKENDS[backend]
             except KeyError:
                 raise ValueError("Invalid backend: %s, expected one of %r"
                                  % (backend, sorted(BACKENDS.keys())))
             backend = backend_factory()
+            logger.info("Parallel.__init__: back_end=%s" % backend.__class__.__name__)
 
         if (require == 'sharedmem' and
                 not getattr(backend, 'supports_sharedmem', False)):

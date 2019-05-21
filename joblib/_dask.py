@@ -5,6 +5,10 @@ import contextlib
 from uuid import uuid4
 import weakref
 import logging
+logger = logging.getLogger('joblib.dask')
+logging.basicConfig(level=logging.DEBUG, format='[%(asctime)s] [%(process)s/%(threadName)s] [%(levelname)s] [%(name)s] %(message)s')
+logger.info("_dask import (logger)")
+logging.info("_dask import (logging)")
 from .parallel import AutoBatchingMixin, ParallelBackendBase, BatchedCalls
 from .parallel import parallel_backend
 
@@ -36,9 +40,6 @@ except NameError:
     # Python 2 backward compat
     class TimeoutError(OSError):
         pass
-
-logger = logging.getLogger('joblib.dask')
-logging.basicConfig(level=logging.DEBUG, format='[%(asctime)s] [%(process)s/%(threadName)s] [%(levelname)s] [%(name)s] %(message)s')
 
 
 class _WeakKeyDictionary:
