@@ -723,7 +723,8 @@ class Parallel(Logger):
         indirectly via dispatch_one_batch.
 
         """
-        logger.info("Parallel._dispatch called")
+        caller_name = inspect.stack()[1][3]
+        logger.info("Parallel._dispatch called from %s" % caller_name)
         # If job.get() catches an exception, it closes the queue:
         if self._aborting:
             return
@@ -756,8 +757,12 @@ class Parallel(Logger):
         against concurrent consumption of the unprotected iterator.
 
         """
-        logger.info("Parallel.dispatch_one_batch called")
+        caller_name = inspect.stack()[1][3]
+        logger.info("Parallel.dispatch_next called from %s" % caller_name)
+
+        logger.info("Parallel.dispatch_next: calling self.dispatch_one_batch")
         if not self.dispatch_one_batch(self._original_iterator):
+            logger.info("Parallel.dispatch_next: called self.dispatch_one_batch")
             self._iterating = False
             self._original_iterator = None
 
@@ -771,6 +776,9 @@ class Parallel(Logger):
         lock so calling this function should be thread safe.
 
         """
+        caller_name = inspect.stack()[1][3]
+        logger.info("Parallel.dispatch_one_batch called from %s" % caller_name)
+
         if self.batch_size == 'auto':
             batch_size = self._backend.compute_batch_size()
         else:
