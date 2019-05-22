@@ -317,16 +317,11 @@ class BatchCompletionCallBack(object):
                                                this_batch_duration)
         logger.info("BatchCompletionCallBack.__call__: calling parallel.print_progress")
         self.parallel.print_progress()
-        logger.info("BatchCompletionCallBack.__call__: taking the lock")
-        with self.parallel._lock:
-            logger.info("BatchCompletionCallBack.__call__: lock taken")
-            if self.parallel._original_iterator is not None:
-                logger.info("BatchCompletionCallBack.__call__: calling Parallel.dispatch_next")
-                self.parallel.dispatch_next()
-            else:
-                logger.info("BatchCompletionCallBack.__call__: not calling Parallel.dispatch_next")
-            logger.info("BatchCompletionCallBack.__call__: leaving the lock")
-        logger.info("BatchCompletionCallBack.__call__: left the lock")
+        if self.parallel._original_iterator is not None:
+            logger.info("BatchCompletionCallBack.__call__: calling Parallel.dispatch_next")
+            self.parallel.dispatch_next()
+        else:
+            logger.info("BatchCompletionCallBack.__call__: not calling Parallel.dispatch_next")
 
 
 ###############################################################################
