@@ -312,8 +312,10 @@ class BatchCompletionCallBack(object):
         self.parallel.n_completed_tasks += self.batch_size
         this_batch_duration = time.time() - self.dispatch_timestamp
 
+        logger.info("BatchCompletionCallBack.__call__: calling parallel._backend.batch_completed")
         self.parallel._backend.batch_completed(self.batch_size,
                                                this_batch_duration)
+        logger.info("BatchCompletionCallBack.__call__: calling parallel.print_progress")
         self.parallel.print_progress()
         logger.info("BatchCompletionCallBack.__call__: taking the lock")
         with self.parallel._lock:
@@ -344,7 +346,7 @@ def register_parallel_backend(name, factory, make_default=False):
     .. versionadded:: 0.10
 
     """
-    logger.info("register_parallel_backend called on ; name: %s ; factory: %s" % (name, factory.__class__.__name__))
+    logger.info("register_parallel_backend called on ; name: %s ; factory: %s" % (name, factory.__name__))
     BACKENDS[name] = factory
     if make_default:
         global DEFAULT_BACKEND

@@ -5,10 +5,6 @@ import contextlib
 from uuid import uuid4
 import weakref
 import logging
-logger = logging.getLogger('joblib.dask')
-logging.basicConfig(level=logging.DEBUG, format='[%(asctime)s] [%(process)s/%(threadName)s] [%(levelname)s] [%(name)s] %(message)s')
-logger.info("_dask import (logger)")
-logging.info("_dask import (logging)")
 from .parallel import AutoBatchingMixin, ParallelBackendBase, BatchedCalls
 from .parallel import parallel_backend
 
@@ -41,6 +37,10 @@ except NameError:
     class TimeoutError(OSError):
         pass
 
+logger = logging.getLogger('joblib.dask')
+logging.basicConfig(level=logging.DEBUG, format='[%(asctime)s] [%(process)s/%(threadName)s] [%(levelname)s] [%(name)s] %(message)s')
+logger.info("_dask import (logger)")
+logging.info("_dask import (logging)")
 
 class _WeakKeyDictionary:
     """A variant of weakref.WeakKeyDictionary for unhashable objects.
@@ -230,6 +230,7 @@ class DaskDistributedBackend(ParallelBackendBase, AutoBatchingMixin):
             for arg in args:
                 arg_id = id(arg)
                 if arg_id in itemgetters:
+                    logger.info("DaskDistributedBackend._to_func_args.maybe_to_future: yield arg of id=%s" % arg_id)
                     yield itemgetters[arg_id]
                     continue
 
@@ -244,8 +245,7 @@ class DaskDistributedBackend(ParallelBackendBase, AutoBatchingMixin):
                             # Rely on automated inter-worker data stealing if
                             # more workers need to reuse this data
                             # concurrently.
-                            logger.info("maybe to future called")
-                            logger.info("[f] = self.client.scatter([arg])")
+                            logger.info("DaskDistributedBackend._to_func_args.maybe_to_future: scatter to Client")
                             [f] = self.client.scatter([arg])
                             call_data_futures[arg] = f
 
@@ -257,8 +257,7 @@ class DaskDistributedBackend(ParallelBackendBase, AutoBatchingMixin):
                 yield arg
 
         tasks = []
-        logger.info("in '_dask._to_func_args'")
-        logger.info("Looping on func.items")
+        logger.info("Looping on func.items of len=%s" % func._size)
         for f, args, kwargs in func.items:
             logger.info("f: %s" % f)
             args = list(maybe_to_futures(args))
@@ -266,7 +265,7 @@ class DaskDistributedBackend(ParallelBackendBase, AutoBatchingMixin):
                               maybe_to_futures(kwargs.values())))
             tasks.append((f, args, kwargs))
 
-        logger.info("Appending tasks done")
+        logger.info("DaskDistributedBackend._to_func_args: appending tasks done")
         if not collected_futures:
             return func, ()
         return (Batch(tasks), collected_futures)
