@@ -130,8 +130,6 @@ from .externals.loky import wrap_non_picklable_objects
 
 logging.info("Joblib %s imported" % __version__)
 
-git_branches = subprocess.check_output(["git", "branch"])
-logging.info("git branches:\n%s" % git_branches)
 
 __all__ = ['Memory', 'MemorizedResult', 'PrintTime', 'Logger', 'hash', 'dump',
            'load', 'Parallel', 'delayed', 'cpu_count', 'effective_n_jobs',
