@@ -1,6 +1,7 @@
 from __future__ import print_function, division, absolute_import
 
 import contextlib
+import inspect
 
 from uuid import uuid4
 import weakref
@@ -39,8 +40,6 @@ except NameError:
 
 logger = logging.getLogger('joblib.dask')
 logging.basicConfig(level=logging.DEBUG, format='[%(asctime)s] [%(process)s/%(threadName)s] [%(levelname)s] [%(name)s] %(message)s')
-logger.info("_dask import (logger)")
-logging.info("_dask import (logging)")
 
 class _WeakKeyDictionary:
     """A variant of weakref.WeakKeyDictionary for unhashable objects.
@@ -97,20 +96,24 @@ def _funcname(x):
 
 class Batch(object):
     def __init__(self, tasks):
-        logger.info("Batch.__init__ called")
+        caller_name = inspect.stack()[1][3]
+        logger.info("Batch.__init__ called from %s" % caller_name)
         self.tasks = tasks
 
     def __call__(self, *data):
-        logger.info("Batch.__call__ called")
+        caller_name = inspect.stack()[1][3]
+        logger.info("Batch.__call__ called from %s" % caller_name)
         results = []
         with parallel_backend('dask'):
             for func, args, kwargs in self.tasks:
+                logger.info("Batch.__call__: executing %s" % func)
                 args = [a(data) if isinstance(a, itemgetter) else a
                         for a in args]
                 kwargs = {k: v(data) if isinstance(v, itemgetter) else v
                           for (k, v) in kwargs.items()}
                 results.append(func(*args, **kwargs))
-        logger.info("End of Batch.__call__")
+                logger.info("Batch.__call__: done executing %s" % func)
+        logger.info("Batch.__call__: done")
         return results
 
     def __reduce__(self):
@@ -130,7 +133,8 @@ class DaskDistributedBackend(ParallelBackendBase, AutoBatchingMixin):
     def __init__(self, scheduler_host=None, scatter=None,
                  client=None, loop=None, wait_for_workers_timeout=10,
                  **submit_kwargs):
-        logger.info("DaskDistributedBackend.__init__ called")
+        caller_name = inspect.stack()[1][3]
+        logger.info("DaskDistributedBackend.__init__ called from %s" % caller_name)
         if distributed is None:
             msg = ("You are trying to use 'dask' as a joblib parallel backend "
                    "but dask is not installed. Please install dask "
@@ -172,29 +176,35 @@ class DaskDistributedBackend(ParallelBackendBase, AutoBatchingMixin):
         self.submit_kwargs = submit_kwargs
 
     def __reduce__(self):
-        logger.info("DaskDistributedBackend.__reduce__ called")
+        caller_name = inspect.stack()[1][3]
+        logger.info("DaskDistributedBackend.__reduce__ called from %s" % caller_name)
         return (DaskDistributedBackend, ())
 
     def get_nested_backend(self):
-        logger.info("DaskDistributedBackend.get_nested_backend called")
+        caller_name = inspect.stack()[1][3]
+        logger.info("DaskDistributedBackend.get_nested_backend called from %s" % caller_name)
         return DaskDistributedBackend(client=self.client), -1
 
     def configure(self, n_jobs=1, parallel=None, **backend_args):
-        logger.info("DaskDistributedBackend.configure called")
+        caller_name = inspect.stack()[1][3]
+        logger.info("DaskDistributedBackend.configure called from %s" % caller_name)
         return self.effective_n_jobs(n_jobs)
 
     def start_call(self):
-        logger.info("DaskDistributedBackend.start_call called")
+        caller_name = inspect.stack()[1][3]
+        logger.info("DaskDistributedBackend.start_call called from %s" % caller_name)
         self.call_data_futures = _WeakKeyDictionary()
 
     def stop_call(self):
-        logger.info("DaskDistributedBackend.stop_call called")
+        caller_name = inspect.stack()[1][3]
+        logger.info("DaskDistributedBackend.stop_call called from %s" % caller_name)
         # The explicit call to clear is required to break a cycling reference
         # to the futures.
         self.call_data_futures.clear()
 
     def effective_n_jobs(self, n_jobs):
-        logger.info("DaskDistributedBackend.effective_n_jobs called")
+        caller_name = inspect.stack()[1][3]
+        logger.info("DaskDistributedBackend.effective_n_jobs called from %s" % caller_name)
         effective_n_jobs = sum(self.client.ncores().values())
         if effective_n_jobs != 0 or not self.wait_for_workers_timeout:
             return effective_n_jobs
@@ -218,7 +228,8 @@ class DaskDistributedBackend(ParallelBackendBase, AutoBatchingMixin):
         return sum(self.client.ncores().values())
 
     def _to_func_args(self, func):
-        logger.info("DaskDistributedBackend._to_func_args called")
+        caller_name = inspect.stack()[1][3]
+        logger.info("DaskDistributedBackend._to_func_args called from %s" % caller_name)
         collected_futures = []
         itemgetters = dict()
 
@@ -257,7 +268,7 @@ class DaskDistributedBackend(ParallelBackendBase, AutoBatchingMixin):
                 yield arg
 
         tasks = []
-        logger.info("Looping on func.items of len=%s" % func._size)
+        logger.info("DaskDistributedBackend._to_func_args: Looping on func.items of len=%s" % func._size)
         for f, args, kwargs in func.items:
             logger.info("f: %s" % f)
             args = list(maybe_to_futures(args))
@@ -271,7 +282,8 @@ class DaskDistributedBackend(ParallelBackendBase, AutoBatchingMixin):
         return (Batch(tasks), collected_futures)
 
     def apply_async(self, func, callback=None):
-        logger.info("DaskDistributedBackend.apply_async called")
+        caller_name = inspect.stack()[1][3]
+        logger.info("DaskDistributedBackend.apply_async called from %s" % caller_name)
         key = '%s-batch-%s' % (_funcname(func), uuid4().hex)
         func, args = self._to_func_args(func)
 
@@ -284,7 +296,8 @@ class DaskDistributedBackend(ParallelBackendBase, AutoBatchingMixin):
 
         @gen.coroutine
         def callback_wrapper():
-            logger.info("DaskDistributedBackend.apply_async: Executing callback_wrapper")
+            caller_name = inspect.stack()[1][3]
+            logger.info("DaskDistributedBackend.apply_async: Executing callback_wrapper ; called from %s" % caller_name)
             result = yield _wait([future])
             self.task_futures.remove(future)
             if callback is not None:
@@ -307,7 +320,8 @@ class DaskDistributedBackend(ParallelBackendBase, AutoBatchingMixin):
 
         joblib.Parallel will never access those results
         """
-        logger.info("DaskDistributedBackend.abort_everything called")
+        caller_name = inspect.stack()[1][3]
+        logger.info("DaskDistributedBackend.abort_everything called from %s" % caller_name)
         self.client.cancel(self.task_futures)
         self.task_futures.clear()
 
@@ -320,13 +334,15 @@ class DaskDistributedBackend(ParallelBackendBase, AutoBatchingMixin):
         """
         # See 'joblib.Parallel.__call__' and 'joblib.Parallel.retrieve' for how
         # this is used.
-        logger.info("DaskDistributedBackend.retrieval_context called")
+        caller_name = inspect.stack()[1][3]
+        logger.info("DaskDistributedBackend.retrieval_context called from %s" % caller_name)
         if hasattr(thread_state, 'execution_state'):
             # we are in a worker. Secede to avoid deadlock.
             secede()
 
         yield
 
-        logger.info("DaskDistributedBackend.retrieval_context called")
+        caller_name = inspect.stack()[1][3]
+        logger.info("DaskDistributedBackend.retrieval_context called from %s" % caller_name)
         if hasattr(thread_state, 'execution_state'):
             rejoin()

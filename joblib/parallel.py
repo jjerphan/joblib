@@ -223,12 +223,17 @@ class BatchedCalls(object):
             # this is for backward compatibility purposes. Before 0.12.6,
             # nested backends were returned without n_jobs indications.
             self._backend, self._n_jobs = backend_and_jobs, None
+
         self._pickle_cache = pickle_cache if pickle_cache is not None else {}
+        logger.info("BatchedCalles.__init__: pickle cache: %s" self._pickle_cache)
 
     def __call__(self):
+        logger.info("BatchedCalls.__call__ called")
         # Set the default nested backend to self._backend but do not set the
         # change the default number of processes to -1
         with parallel_backend(self._backend, n_jobs=self._n_jobs):
+            logger.info("BatchedCalles.__call__: executing functions with %s and %s jobs" \
+                        % (self._backend, self._n_jobs))
             return [func(*args, **kwargs)
                     for func, args, kwargs in self.items]
 
@@ -309,6 +314,7 @@ class BatchCompletionCallBack(object):
 
     def __call__(self, out):
         logger.info("BatchCompletionCallBack.__call__ called")
+        logger.info("BatchCompletionCallBack.__call__; out: %s" % out)
         self.parallel.n_completed_tasks += self.batch_size
         this_batch_duration = time.time() - self.dispatch_timestamp
 
