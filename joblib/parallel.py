@@ -314,7 +314,6 @@ class BatchCompletionCallBack(object):
 
     def __call__(self, out):
         logger.info("BatchCompletionCallBack.__call__ called")
-        logger.info("BatchCompletionCallBack.__call__; out: %s" % out)
         self.parallel.n_completed_tasks += self.batch_size
         this_batch_duration = time.time() - self.dispatch_timestamp
 
