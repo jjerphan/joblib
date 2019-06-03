@@ -1,6 +1,9 @@
 from __future__ import print_function, division, absolute_import
 
 import contextlib
+import inspect
+import threading
+import logging
 
 from uuid import uuid4
 import weakref
@@ -36,6 +39,9 @@ except NameError:
     # Python 2 backward compat
     class TimeoutError(OSError):
         pass
+
+logger = logging.getLogger('joblib.dask')
+logging.basicConfig(level=logging.DEBUG, format='[%(asctime)s] [%(process)s/%(threadName)s] [%(levelname)s] [%(name)s] %(message)s')
 
 
 class _WeakKeyDictionary:
@@ -162,6 +168,9 @@ class DaskDistributedBackend(ParallelBackendBase, AutoBatchingMixin):
         self.wait_for_workers_timeout = wait_for_workers_timeout
         self.submit_kwargs = submit_kwargs
 
+        # This lock is uses to avoid race condition on futures stored in `task_futures`.
+        self._lock = threading.Lock()
+
     def __reduce__(self):
         return (DaskDistributedBackend, ())
 
@@ -254,12 +263,29 @@ class DaskDistributedBackend(ParallelBackendBase, AutoBatchingMixin):
         func, args = self._to_func_args(func)
 
         future = self.client.submit(func, *args, key=key, **self.submit_kwargs)
-        self.task_futures.add(future)
+        logger.info("DaskDistributedBackend.apply_async: Done submitting to the Client")
+
+        logger.info("DaskDistributedBackend.apply_async: acquiring DaskDistributedBackend._lock")
+        with self._lock:
+            logger.info("DaskDistributedBackend.apply_async: acquired DaskDistributedBackend._lock")
+            self.task_futures.add(future)
+            logger.info("DaskDistributedBackend.apply_async: Added future to tasks")
+            logger.info("DaskDistributedBackend.apply_async: releasing DaskDistributedBackend._lock")
+        logger.info("DaskDistributedBackend.apply_async: left DaskDistributedBackend._lock")
 
         @gen.coroutine
         def callback_wrapper():
+            caller_name = inspect.stack()[1][3]
+            logger.info("Callback_wrapper called from %s" % caller_name)
             result = yield _wait([future])
-            self.task_futures.remove(future)
+            logger.info("Callback_wrapper: acquiring DaskDistributedBackend._lock")
+            with self._lock:
+                logger.info("Callback_wrapper: acquired DaskDistributedBackend._lock")
+                self.task_futures.remove(future)
+                logger.info("Callback_wrapper: releasing DaskDistributedBackend._lock")
+
+            logger.info("Callback_wrapper: left DaskDistributedBackend._lock")
+
             if callback is not None:
                 callback(result)  # gets called in separate thread
 
@@ -278,8 +304,18 @@ class DaskDistributedBackend(ParallelBackendBase, AutoBatchingMixin):
 
         joblib.Parallel will never access those results
         """
-        self.client.cancel(self.task_futures)
-        self.task_futures.clear()
+        caller_name = inspect.stack()[1][3]
+        logger.info("DaskDistributedBackend.abort_everything called from %s" % caller_name)
+
+        logger.info("DaskDistributedBackend.abort_everything: acquiring DaskDistributedBackend._lock")
+
+        with self._lock:
+            logger.info("DaskDistributedBackend.abort_everything: acquired DaskDistributedBackend._lock")
+            self.client.cancel(self.task_futures)
+            self.task_futures.clear()
+            logger.info("DaskDistributedBackend.abort_everything: releasing DaskDistributedBackend._lock")
+
+        logger.info("DaskDistributedBackend.abort_everything: left DaskDistributedBackend._lock")
 
     @contextlib.contextmanager
     def retrieval_context(self):
